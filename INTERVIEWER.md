@@ -26,19 +26,18 @@ the shape. `README.md` documents it.
 | Block | Minutes | What happens |
 |---|---|---|
 | Intro | 3 | Explain format. Ask him to think aloud. Tell him tasks arrive one at a time. |
-| Task 1: fetch and render | 12 | Loading, error, empty, retry. |
-| Task 2: types | 6 | Real API types, real UI state type. |
-| Task 3: formatting and totals | 8 | Intl, money, day boundary. |
-| Task 4: group by day | 7 | Pure function, memo, ordering. |
-| Task 5: search and filter | 8 | Controlled input, debounce, derived state. |
-| Task 6: requirements change | 8 | API paginates now. |
-| Task 7: tests | 8 | One pure test, one RTL test. |
+| Task 1: fetch, render, type | 15 | Loading, error, empty, retry. Real API types, real UI state type. |
+| Task 2: format, total, group by day | 13 | Intl, money, day boundary. Pure function, memo, ordering. |
+| Task 3: search and filter, then the requirements change | 14 | Controlled input, debounce, derived state. Then the API paginates. |
+| Task 4: tests | 10 | One pure test, one RTL test. |
 | Wrap-up | 5 | Two internals questions from the bank, then feedback. |
 
-You will not get through everything. Real interviews of this kind expect 2 to 4
-tasks done properly. Cut tasks, not depth. A mid-level pass is Tasks 1 to 4
+You will not get through everything. Each task here is two of the smaller
+tasks a real interview hands out one at a time, so finishing two of them
+properly is on target. Cut tasks, not depth. A mid-level pass is Tasks 1 and 2
 working with types, plus a reasonable answer to most theory questions. Getting
-to Task 6 with tests is a strong pass.
+through the requirements change in Task 3 and writing tests in Task 4 is a
+strong pass.
 
 Interrupt with a question roughly every 3 to 4 minutes while he codes. That is
 what the real interview feels like.
@@ -53,11 +52,13 @@ what the real interview feels like.
 
 ---
 
-## Task 1: Fetch and render (12 min)
+## Task 1: Fetch, render and type it (15 min)
 
 **Say:** "Fetch the current user and their transactions. Show the user's name
 and a list of transactions with description, amount and date. Handle loading,
-error and empty states. On error, let me retry."
+error and empty states. On error, let me retry. Type the API
+responses properly, and type your component state so that it is impossible to
+be in `loading` and `error` at the same time."
 
 **Expect to see**
 
@@ -69,10 +70,19 @@ error and empty states. On error, let me retry."
 - Retry re-runs the fetch, not a page reload.
 - Cleanup in the effect: `AbortController` or at least an "ignore stale result" flag.
 - Key by `tx.id`.
+- A `Transaction` type with `amount: string`, `createdDate: number`, literal
+  unions for `currency` and `state`.
+- A discriminated union for UI state:
+  `{ status: 'loading' } | { status: 'error'; error: string } | { status: 'success'; data: Transaction[] }`.
+- Ideally a separate domain type where `amount` is already a number and
+  `createdDate` is a `Date` or number, converted once at the API boundary.
 
 **Red flags:** `any` on the response, `key={index}`, error swallowed with
 `console.log`, loading never turns off on error, fetching inside the render
 body, `useEffect` with a missing dependency he then silences.
+`amount: number` typed against a string API "because it should
+be a number". Three booleans `loading`, `error`, `data`. Casting with `as`
+and calling it validation.
 
 ### Questions
 
@@ -125,27 +135,7 @@ session. `httpOnly`, `Secure`, `SameSite` cookie, or an in-memory access token
 with a refresh cookie. Bonus: what is the trade-off of in-memory? (Lost on
 reload, needs a silent refresh.)
 
----
-
-## Task 2: Types (6 min)
-
-**Say:** "Type the API responses properly, and type your component state so that
-it is impossible to be in `loading` and `error` at the same time."
-
-**Expect to see**
-
-- A `Transaction` type with `amount: string`, `createdDate: number`, literal
-  unions for `currency` and `state`.
-- A discriminated union for UI state:
-  `{ status: 'loading' } | { status: 'error'; error: string } | { status: 'success'; data: Transaction[] }`.
-- Ideally a separate domain type where `amount` is already a number and
-  `createdDate` is a `Date` or number, converted once at the API boundary.
-
-**Red flags:** `amount: number` typed against a string API "because it should
-be a number". Three booleans `loading`, `error`, `data`. Casting with `as`
-and calling it validation.
-
-### Questions
+#### Once the types are in
 
 **"`const data = (await res.json()) as Transaction[]`. What did that `as` check at runtime?"**
 Nothing. `res.json()` returns `any`, the cast is a promise to the compiler, not
@@ -175,11 +165,12 @@ this reason. Follow up: is that also why `amount` is a string? (Yes.)
 
 ---
 
-## Task 3: Formatting and totals (8 min)
+## Task 2: Format, total and group by day (13 min)
 
-**Say:** "Format amounts as currency according to their own currency, format the
-date in a human-readable way, and show the total spent. Only completed outgoing
-transactions count as spend."
+**Say:** "Format amounts as currency according to their own currency, and format
+the date in a human-readable way. Then group the list by calendar day, newest
+day first, with a per-day spend total. Keep the API order inside each day.
+Only completed outgoing transactions count as spend."
 
 **Expect to see**
 
@@ -190,9 +181,14 @@ transactions count as spend."
 - He notices that totals across four currencies cannot be a single number.
   He should ask you what to do. Tell him: "one total per currency".
 - He notices `-0.00` on the "Card verification" row renders as `-£0.00`.
+- A pure function `groupByDay(transactions): DayGroup[]` outside the component.
+- `useMemo` around the call, with the right dependency.
+- Output as an array of groups, or a `Map`, not a plain object keyed by date.
 
 **Red flags:** `amount + ' ' + currency`. Summing with `parseFloat` and
 displaying `0.30000000000000004`. Not asking about mixed currencies.
+Grouping inline in JSX. `transactions.sort(...)` mutating state.
+`Object.keys(groups)` and assuming insertion order.
 
 ### Questions
 
@@ -224,23 +220,7 @@ keystroke that adds up. Hoist to module scope, cache per currency in a `Map`, or
 `useMemo`. Then: "how would you find out whether it actually matters here,
 rather than guessing?" (React Profiler, Performance tab.)
 
----
-
-## Task 4: Group by day (7 min)
-
-**Say:** "Group the list by calendar day, newest day first, with a per-day
-spend total. Keep the API order inside each day."
-
-**Expect to see**
-
-- A pure function `groupByDay(transactions): DayGroup[]` outside the component.
-- `useMemo` around the call, with the right dependency.
-- Output as an array of groups, or a `Map`, not a plain object keyed by date.
-
-**Red flags:** Grouping inline in JSX. `transactions.sort(...)` mutating state.
-`Object.keys(groups)` and assuming insertion order.
-
-### Questions
+#### Once the grouping is in
 
 **"You grouped into an object keyed by day. If your key is the epoch day number instead of `'2026-09-05'`, what order does `Object.keys` give you?"**
 Integer-like string keys are enumerated in ascending numeric order *before*
@@ -274,7 +254,7 @@ correct without it.
 
 ---
 
-## Task 5: Search and filter (8 min)
+## Task 3: Search and filter, then the requirements change (14 min)
 
 **Say:** "Add a text box that filters by description, case-insensitive, and a
 dropdown for state. Debounce the text box. Filters should compose with the
@@ -332,9 +312,9 @@ previous request, or track a request counter and ignore responses that are not
 the latest. Ask which he prefers and why (abort also saves bandwidth, counter
 works with any promise).
 
----
+### Midway: the requirements change
 
-## Task 6: Requirements change (8 min)
+About six minutes in, once search and filter work, interrupt him.
 
 **Say it like a product manager:** "Change of plan. The list is going to have
 thousands of rows, so the backend team made it paginated. Pass `?limit=20` and
@@ -354,7 +334,7 @@ he read the README for the new shape?
 - He realises the daily totals are now wrong for the last day on screen, and
   says so.
 
-### Questions
+### Questions after the change
 
 **"TypeScript broke in three places when the shape changed. Where would TypeScript *not* have caught this?"**
 At runtime. If he had not updated the type and the API had just started
@@ -385,7 +365,7 @@ fix is a product decision.
 
 ---
 
-## Task 7: Tests (8 min)
+## Task 4: Tests (10 min)
 
 **Say:** "Write two tests. One for your grouping function. One for the component:
 mock the network, check loading appears, then rows appear, then that a failure
